@@ -3,7 +3,8 @@
 #
 # Server Files: /mnt/server
 apt update -y
-apt install -y tar xz-utils curl git git-lfs file jq unzip
+# openssh-client provides ssh-keygen for deploy key generation
+apt install -y tar xz-utils curl git git-lfs file jq unzip openssh-client
 
 mkdir -p /mnt/server
 cd /mnt/server
@@ -66,7 +67,7 @@ if [ ! -d "./alpine/" ] && [ ! -d "./server-data/" ]; then
     echo "Existing SSH key detected at ${SSH_KEY}; keeping current key."
   fi
 
-  mkdir logs/
+  mkdir -p logs/
   echo "Installation complete."
 
 else

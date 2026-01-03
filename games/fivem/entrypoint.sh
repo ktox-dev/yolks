@@ -27,7 +27,7 @@ if [[ "${GIT_ENABLED}" == "true" || "${GIT_ENABLED}" == "1" ]]; then
   cd "${REPO_DIR}"
 
   GIT_REPOURL=${GIT_REPOURL%/}
-  # Convert GitHub HTTPS URLs to SSH for key-based auth
+  # Convert GitHub HTTPS/HTTP URLs to SSH for key-based auth
   if [[ "${GIT_REPOURL}" == https://github.com/* ]]; then
     REPO_PATH=${GIT_REPOURL#https://github.com/}
     REPO_PATH=${REPO_PATH%.git}
@@ -43,11 +43,22 @@ if [[ "${GIT_ENABLED}" == "true" || "${GIT_ENABLED}" == "1" ]]; then
     GIT_REPOURL="${GIT_REPOURL}.git"
   fi
 
-  # Force submodules to use SSH as well
-  git config --global url."git@github.com:".insteadOf "https://github.com/"
-  git config --global url."git@github.com:".insteadOf "http://github.com/"
-  git config --global url."git@github.com:".insteadOf "ssh://git@github.com/"
-  git config --global url."git@github.com:".insteadOf "git@github.com:"
+  # Per-repo SSH rewrite (avoids global duplicates and forces submodules to SSH)
+  REWRITE_URL="git@github.com:"
+  ensure_rewrite() {
+    git config --local --replace-all url."${REWRITE_URL}".insteadOf "https://github.com/"
+    git config --local --replace-all url."${REWRITE_URL}".insteadOf "http://github.com/"
+    git config --local --replace-all url."${REWRITE_URL}".insteadOf "ssh://git@github.com/"
+    git config --local --replace-all url."${REWRITE_URL}".insteadOf "git@github.com:"
+  }
+
+  # Inject rewrite during initial clone so submodules immediately use SSH
+  REWRITE_ARGS=(
+    -c url."${REWRITE_URL}".insteadOf=https://github.com/
+    -c url."${REWRITE_URL}".insteadOf=http://github.com/
+    -c url."${REWRITE_URL}".insteadOf=ssh://git@github.com/
+    -c url."${REWRITE_URL}".insteadOf=git@github.com:
+  )
 
   git config --global fetch.prune true
   git config --global maintenance.auto false
@@ -61,6 +72,7 @@ if [[ "${GIT_ENABLED}" == "true" || "${GIT_ENABLED}" == "1" ]]; then
   if [ -d .git ]; then
     echo "Updating existing repository.";
     git remote set-url origin "${GIT_REPOURL}"
+    ensure_rewrite
     git fetch --depth=1 --no-tags origin "${TARGET_BRANCH}" || echo "Fetch failed; continuing with existing files."
     git checkout -B "${TARGET_BRANCH}" "origin/${TARGET_BRANCH}" || echo "Checkout failed; verify branch name."
     git submodule sync --recursive
@@ -76,8 +88,9 @@ if [[ "${GIT_ENABLED}" == "true" || "${GIT_ENABLED}" == "1" ]]; then
     echo "Repository sync complete."
   else
     echo "Cloning repository into ${REPO_DIR}.";
-    git clone --depth=1 --no-tags --recurse-submodules --shallow-submodules --single-branch ${GIT_BRANCH:+--branch "${GIT_BRANCH}"} "${GIT_REPOURL}" . \
+    git "${REWRITE_ARGS[@]}" clone --depth=1 --no-tags --recurse-submodules --shallow-submodules --single-branch ${GIT_BRANCH:+--branch "${GIT_BRANCH}"} "${GIT_REPOURL}" . \
       && echo "Repository cloned." || echo "Repository clone failed."
+    ensure_rewrite
     if command -v git-lfs >/dev/null 2>&1; then
       CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "${TARGET_BRANCH}")
       git lfs install --local
