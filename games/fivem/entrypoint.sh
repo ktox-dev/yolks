@@ -1,4 +1,5 @@
 #!/bin/bash
+export GIT_TERMINAL_PROMPT=0
 cd /home/container
 
 # Auto update resources from git, keeping only the current branch plus submodules and LFS objects.
@@ -18,7 +19,10 @@ if [[ "${GIT_ENABLED}" == "true" || "${GIT_ENABLED}" == "1" ]]; then
     GIT_REPOURL="https://${GIT_USERNAME}:${GIT_TOKEN}@$(echo -e "${GIT_REPOURL}" | cut -d/ -f3-)"
     if [[ -n "${GIT_TOKEN}" ]]; then
       # Ensure submodules pulled over HTTPS inherit provided credentials.
-      git config --global url."https://${GIT_USERNAME:-oauth2}:${GIT_TOKEN}@github.com/".insteadOf "https://github.com/"
+      git config --global --replace-all url."https://${GIT_USERNAME:-oauth2}:${GIT_TOKEN}@github.com/".insteadOf "https://github.com/"
+      git config --global --replace-all url."https://${GIT_USERNAME:-oauth2}:${GIT_TOKEN}@github.com/".insteadOf "http://github.com/"
+      git config --global --replace-all url."https://${GIT_USERNAME:-oauth2}:${GIT_TOKEN}@github.com/".insteadOf "git@github.com:"
+      git config --global --replace-all url."https://${GIT_USERNAME:-oauth2}:${GIT_TOKEN}@github.com/".insteadOf "ssh://git@github.com/"
     fi
   fi
 
