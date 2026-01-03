@@ -52,6 +52,25 @@ if [[ "${GIT_ENABLED}" == "true" || "${GIT_ENABLED}" == "1" ]]; then
     git config --local --replace-all url."${REWRITE_URL}".insteadOf "git@github.com:"
   }
 
+  rewrite_submodules_to_ssh() {
+    # Rewrite any GitHub submodule URLs in .gitmodules to SSH to avoid HTTPS prompts
+    if [[ -f .gitmodules ]]; then
+      while read -r key url; do
+        case "$url" in
+          https://github.com/*|http://github.com/*)
+            path=${url#*github.com/}
+            path=${path%.git}
+            ssh_url="git@github.com:${path}.git"
+            git config -f .gitmodules "${key}" "${ssh_url}" || true
+          ;;
+        esac
+      done < <(git config -f .gitmodules --get-regexp 'submodule\..*\.url' 2>/dev/null)
+      git submodule sync --recursive || true
+    fi
+    # Ensure local config follows the updated URLs
+    git submodule sync --recursive || true
+  }
+
   # Inject rewrite during initial clone so submodules immediately use SSH
   REWRITE_ARGS=(
     -c url."${REWRITE_URL}".insteadOf=https://github.com/
@@ -73,6 +92,7 @@ if [[ "${GIT_ENABLED}" == "true" || "${GIT_ENABLED}" == "1" ]]; then
     echo "Updating existing repository.";
     git remote set-url origin "${GIT_REPOURL}"
     ensure_rewrite
+    rewrite_submodules_to_ssh
     git fetch --depth=1 --no-tags origin "${TARGET_BRANCH}" || echo "Fetch failed; continuing with existing files."
     git checkout -B "${TARGET_BRANCH}" "origin/${TARGET_BRANCH}" || echo "Checkout failed; verify branch name."
     git submodule sync --recursive
@@ -91,6 +111,7 @@ if [[ "${GIT_ENABLED}" == "true" || "${GIT_ENABLED}" == "1" ]]; then
     git "${REWRITE_ARGS[@]}" clone --depth=1 --no-tags --recurse-submodules --shallow-submodules --single-branch ${GIT_BRANCH:+--branch "${GIT_BRANCH}"} "${GIT_REPOURL}" . \
       && echo "Repository cloned." || echo "Repository clone failed."
     ensure_rewrite
+    rewrite_submodules_to_ssh
     if command -v git-lfs >/dev/null 2>&1; then
       CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "${TARGET_BRANCH}")
       git lfs install --local
