@@ -1,86 +1,60 @@
 #!/bin/bash
 cd /home/container
 
-# Auto update resources from git.
-if [ "${GIT_ENABLED}" == "true" ] || [ "${GIT_ENABLED}" == "1" ]; then
+# Auto update resources from git, keeping only the current branch plus submodules and LFS objects.
+if [[ "${GIT_ENABLED}" == "true" || "${GIT_ENABLED}" == "1" ]]; then
+  echo "Preparing to sync git repository into /home/container/server-data.";
 
-  # Pre git stuff
-  echo "Wait, preparing to pull or clone from git.";
+  REPO_DIR="/home/container/server-data"
+  mkdir -p "${REPO_DIR}"
+  cd "${REPO_DIR}"
 
-  mkdir -p /home/container/server-data
-  cd /home/container/server-data
-
-  # Git stuff
-  if [[ ${GIT_REPOURL} != *.git ]]; then # Add .git at end of URL
-      GIT_REPOURL=${GIT_REPOURL}.git
+  GIT_REPOURL=${GIT_REPOURL%/}
+  if [[ ${GIT_REPOURL} != *.git ]]; then
+    GIT_REPOURL="${GIT_REPOURL}.git"
   fi
 
-  # Configure git for large repos
-  git config --global core.preloadindex true     # Preload index into memory for faster operations
-  git config --global core.fsync all            # Reduce disk I/O
-  git config --global maintenance.auto false      # Prevent background maintenance
-  git config --global index.threads 8            # Use multiple threads for indexing
-
-  if [ -z "${GIT_USERNAME}" ] && [ -z "${GIT_TOKEN}" ]; then # Check for git username & token
-    echo -e "git Username or git Token was not specified."
-  else
-    GIT_REPOURL="https://${GIT_USERNAME}:${GIT_TOKEN}@$(echo -e ${GIT_REPOURL} | cut -d/ -f3-)"
+  if [[ -n "${GIT_USERNAME}" || -n "${GIT_TOKEN}" ]]; then
+    GIT_REPOURL="https://${GIT_USERNAME}:${GIT_TOKEN}@$(echo -e "${GIT_REPOURL}" | cut -d/ -f3-)"
   fi
 
-  if [ "$(ls -A /home/container/server-data)" ]; then # Files exist in server-data folder, pull
-    echo "Files exist in /home/container/server-data/. Attempting to pull from git repository."
+  git config --global fetch.prune true
+  git config --global maintenance.auto false
 
-		# Get git origin from /home/container/server-data/.git/config
-    if [ -d .git ]; then
-      if [ -f .git/config ]; then
-        GIT_ORIGIN=$(git config --get remote.origin.url)
-      fi
-    fi
+  TARGET_BRANCH="${GIT_BRANCH}"
+  if [[ -z "${TARGET_BRANCH}" ]]; then
+    TARGET_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || git remote show origin 2>/dev/null | sed -n '/HEAD branch/s/.*: //p')
+  fi
+  TARGET_BRANCH=${TARGET_BRANCH:-main}
 
-    # If git origin matches the repo specified by user then pull
-    if [ "${GIT_ORIGIN}" == "${GIT_REPOURL}" ]; then
-      # Update remote refs
-      echo "Checking for updates..."
-      git remote update || echo "Failed to fetch updates from remote repository"
-      
-      # Check if we're behind remote
-      if [[ $(git status -uno | grep 'Your branch is behind') ]]; then
-        if [ -n "$(git status --porcelain -uno)" ]; then
-          echo "Local changes detected:"
-          git status --porcelain -uno
-          echo -e "\nDo you want to continue? [y/N]"
-          read -r response
-          if [[ "$response" =~ ^([yY][eE][sS]|[yY])+$ ]]; then
-            git reset --hard origin/${GIT_BRANCH} && \
-            git pull --recurse-submodules && \
-            git submodule update --init --recursive --progress && \
-            echo "Finished pulling /home/container/server-data/ from git." || \
-            echo "Failed pulling /home/container/server-data/ from git."
-          else
-            echo "Pull aborted due to local changes."
-          fi
-        else
-          git pull --recurse-submodules && \
-          git submodule update --init --recursive --progress && \
-          echo "Finished pulling /home/container/server-data/ from git." || \
-          echo "Failed pulling /home/container/server-data/ from git."
-        fi
-      else
-        echo "Repository is already up to date."
-      fi
-    fi
-  else # No files exist in server-data folder, clone
-    echo -e "server-data directory is empty. Attempting to clone git repository."
-    if [ -z ${GIT_BRANCH} ]; then
-      echo -e "Cloning default branch into /home/container/server-data/."
-      git clone --depth=1 --no-tags --no-progress ${GIT_REPOURL} . && echo "Finished cloning into /home/container/server-data/ from git." || echo "Failed cloning into /home/container/server-data/ from git."
+  if [ -d .git ]; then
+    echo "Updating existing repository.";
+    git remote set-url origin "${GIT_REPOURL}"
+    git fetch --depth=1 --no-tags origin "${TARGET_BRANCH}" || echo "Fetch failed; continuing with existing files."
+    git checkout -B "${TARGET_BRANCH}" "origin/${TARGET_BRANCH}" || echo "Checkout failed; verify branch name."
+    git submodule sync --recursive
+    git submodule update --init --recursive --depth=1 --progress
+    if command -v git-lfs >/dev/null 2>&1; then
+      CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "${TARGET_BRANCH}")
+      git lfs install --local
+      git lfs fetch --exclude="" --include="*" origin "${CURRENT_BRANCH}" || true
+      git lfs checkout || true
     else
-      echo -e "Cloning ${GIT_BRANCH} branch into /home/container/server-data/."
-      git clone --depth=1 --no-tags --no-progress --single-branch --branch ${GIT_BRANCH} ${GIT_REPOURL} . && echo "Finished cloning into /home/container/server-data/ from git." || echo "Failed cloning into /home/container/server-data/ from git."
+      echo "git-lfs not installed; skipping LFS fetch."
+    fi
+    echo "Repository sync complete."
+  else
+    echo "Cloning repository into ${REPO_DIR}.";
+    git clone --depth=1 --no-tags --recurse-submodules --shallow-submodules --single-branch ${GIT_BRANCH:+--branch "${GIT_BRANCH}"} "${GIT_REPOURL}" . \
+      && echo "Repository cloned." || echo "Repository clone failed."
+    if command -v git-lfs >/dev/null 2>&1; then
+      CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "${TARGET_BRANCH}")
+      git lfs install --local
+      git lfs fetch --exclude="" --include="*" origin "${CURRENT_BRANCH}" || true
+      git lfs checkout || true
     fi
   fi
 
-  # Post git stuff
   cd /home/container
 fi
 
