@@ -14,15 +14,30 @@ if [[ "${GIT_ENABLED}" == "true" || "${GIT_ENABLED}" == "1" ]]; then
     GIT_REPOURL="${GIT_REPOURL}.git"
   fi
 
+  raw_url_encode() {
+    # Minimal URL encoder for credentials to avoid malformed HTTPS URLs.
+    local string="$1" encoded="" char
+    for (( i=0; i<${#string}; i++ )); do
+      char=${string:i:1}
+      case "${char}" in
+        [a-zA-Z0-9.~_-]) encoded+="${char}" ;;
+        *) printf -v encoded '%s%%%02X' "${encoded}" "'${char}'" ;;
+      esac
+    done
+    echo "${encoded}"
+  }
+
   if [[ -n "${GIT_USERNAME}" || -n "${GIT_TOKEN}" ]]; then
-    GIT_REPOURL="https://${GIT_USERNAME}:${GIT_TOKEN}@$(echo -e "${GIT_REPOURL}" | cut -d/ -f3-)"
-    GIT_USER_FOR_REWRITE="${GIT_USERNAME:-oauth2}"
+    ENCODED_USER=$(raw_url_encode "${GIT_USERNAME:-oauth2}")
+    ENCODED_TOKEN=$(raw_url_encode "${GIT_TOKEN}")
+    GIT_REPOURL="https://${ENCODED_USER}:${ENCODED_TOKEN}@$(echo -e "${GIT_REPOURL}" | cut -d/ -f3-)"
+    GIT_USER_FOR_REWRITE="${ENCODED_USER:-oauth2}"
     GIT_HOST_FROM_URL=$(echo "${GIT_REPOURL}" | sed -E 's#https?://([^/]+)/.*#\1#')
     # Ensure private submodules reuse the same credentials to avoid interactive prompts.
     if [[ -n "${GIT_HOST_FROM_URL}" ]]; then
-      git config --global url."https://${GIT_USER_FOR_REWRITE}:${GIT_TOKEN}@${GIT_HOST_FROM_URL}/".insteadOf "https://${GIT_HOST_FROM_URL}/"
+      git config --global url."https://${GIT_USER_FOR_REWRITE}:${ENCODED_TOKEN}@${GIT_HOST_FROM_URL}/".insteadOf "https://${GIT_HOST_FROM_URL}/"
     fi
-    git config --global url."https://${GIT_USER_FOR_REWRITE}:${GIT_TOKEN}@github.com/".insteadOf "https://github.com/"
+    git config --global url."https://${GIT_USER_FOR_REWRITE}:${ENCODED_TOKEN}@github.com/".insteadOf "https://github.com/"
   fi
 
   git config --global fetch.prune true
