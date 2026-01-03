@@ -51,41 +51,19 @@ if [ ! -d "./alpine/" ] && [ ! -d "./server-data/" ]; then
   # Delete original bash launch script
   rm -rf ${DOWNLOAD_LINK##*/} run.sh
 
-  # Clone resources repo from git
-  if [[ "${GIT_ENABLED}" == "true" || "${GIT_ENABLED}" == "1" ]]; then
-    echo "Preparing to clone resources repo from git.";
-
-    REPO_DIR="/mnt/server/server-data"
-    mkdir -p "${REPO_DIR}"
-    cd "${REPO_DIR}"
-
-    GIT_REPOURL=${GIT_REPOURL%/}
-    if [[ ${GIT_REPOURL} != *.git ]]; then
-      GIT_REPOURL="${GIT_REPOURL}.git"
-    fi
-
-    if [[ -n "${GIT_USERNAME}" || -n "${GIT_TOKEN}" ]]; then
-      GIT_REPOURL="https://${GIT_USERNAME}:${GIT_TOKEN}@$(echo -e "${GIT_REPOURL}" | cut -d/ -f3-)"
-    fi
-
-    git config --global fetch.prune true
-    git config --global maintenance.auto false
-
-    git clone --depth=1 --no-tags --recurse-submodules --shallow-submodules --single-branch ${GIT_BRANCH:+--branch "${GIT_BRANCH}"} "${GIT_REPOURL}" . \
-      && echo "Finished cloning resources into ${REPO_DIR} from git." || echo "Failed cloning resources into ${REPO_DIR} from git."
-
-    if command -v git-lfs >/dev/null 2>&1; then
-      CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "${GIT_BRANCH:-main}")
-      git lfs install --local
-      git lfs fetch --exclude="" --include="*" origin "${CURRENT_BRANCH}" || true
-      git lfs checkout || true
-    else
-      echo "git-lfs not installed; skipping LFS fetch."
-    fi
-
-    cd /mnt/server
+  # Generate SSH key for git (used later by entrypoint)
+  SSH_DIR="/mnt/server/.ssh"
+  SSH_KEY="${SSH_DIR}/id_ed25519"
+  mkdir -p "${SSH_DIR}"
+  chmod 700 "${SSH_DIR}"
+  if [[ ! -f "${SSH_KEY}" ]]; then
+    ssh-keygen -t ed25519 -N "" -C "pterodactyl-fivem" -f "${SSH_KEY}" >/dev/null
+    chmod 600 "${SSH_KEY}"
+    chmod 644 "${SSH_KEY}.pub"
+    echo "==> Add this public key to GitHub deploy keys (read-only is enough):"
+    cat "${SSH_KEY}.pub"
   else
-    echo "GIT_ENABLED is disabled; skipping resource checkout. Provide server-data manually."
+    echo "Existing SSH key detected at ${SSH_KEY}; keeping current key."
   fi
 
   mkdir logs/
