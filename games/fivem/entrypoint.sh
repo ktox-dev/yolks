@@ -16,12 +16,12 @@ if [[ "${GIT_ENABLED}" == "true" || "${GIT_ENABLED}" == "1" ]]; then
 
   raw_url_encode() {
     # Minimal URL encoder for credentials to avoid malformed HTTPS URLs.
-    local string="$1" encoded="" char
+    local string="$1" encoded="" char hex
     for (( i=0; i<${#string}; i++ )); do
       char=${string:i:1}
       case "${char}" in
         [a-zA-Z0-9.~_-]) encoded+="${char}" ;;
-        *) printf -v encoded '%s%%%02X' "${encoded}" "'${char}'" ;;
+        *) printf -v hex '%%%02X' "'${char}"; encoded+="${hex}" ;;
       esac
     done
     echo "${encoded}"
