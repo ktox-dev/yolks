@@ -51,7 +51,7 @@ jobs:
           platforms: linux/amd64
           push: true
           tags: |
-            ghcr.io/kaanhehe/games:${{ matrix.game }}
+            ghcr.io/ktox-dev/games:${{ matrix.game }}
             ${{ steps.lower-repo.outputs.repository == 'pelican-eggs' && format('ghcr.io/parkervcp/games:{0}', matrix.game) || '' }}
   pushAll:
     name: "games_All:${{ matrix.game }}"
@@ -86,5 +86,5 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ghcr.io/kaanhehe/games:${{ matrix.game }}
+            ghcr.io/ktox-dev/games:${{ matrix.game }}
             ${{ steps.lower-repo.outputs.repository == 'pelican-eggs' && format('ghcr.io/parkervcp/games:{0}', matrix.game) || '' }}
